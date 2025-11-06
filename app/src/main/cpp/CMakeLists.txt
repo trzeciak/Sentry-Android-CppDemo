@@ -11,6 +11,8 @@ cmake_minimum_required(VERSION 3.22.1)
 # build script scope).
 project("cppdemo")
 
+find_package(sentry-native-ndk REQUIRED CONFIG)
+
 # Creates and names a library, sets it as either STATIC
 # or SHARED, and provides the relative paths to its source code.
 # You can define multiple libraries, and CMake builds them for you.
@@ -37,6 +39,8 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
         # List libraries link to the target library
         android
         log
+        sentry-native-ndk::sentry-android
+        sentry-native-ndk::sentry
 )
 
 # Set -Og for debug builds only

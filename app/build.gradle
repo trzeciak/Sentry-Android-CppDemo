@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+
+    id 'io.sentry.android.gradle' version '5.12.2'
 }
 
 android {
@@ -52,6 +54,7 @@ android {
     }
     buildFeatures {
         viewBinding true
+        prefab = true
     }
 }
 
@@ -63,4 +66,11 @@ dependencies {
     testImplementation libs.junit
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
+}
+
+sentry {
+    org = "<org-name>"
+    projectName = "cppdemo-android"
+
+    uploadNativeSymbols = true
 }
