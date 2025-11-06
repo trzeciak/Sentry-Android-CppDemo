@@ -5,6 +5,8 @@
 #include <android/log.h>
 #include <jni.h>
 
+#include <sentry.h>
+
 #include "native-lib.hpp"
 
 #define LOG_TAG "CppDemo"
@@ -47,6 +49,13 @@ Java_com_example_cppdemo_MainActivity_throwCppException(JNIEnv *env, jobject /* 
 
 inline void cppdemo::NativeLogger(const char *message) {
     __android_log_print(ANDROID_LOG_WARN, LOG_TAG, "%s", message);
+    sentry_value_t crumb = sentry_value_new_breadcrumb("debug", message); // type: debug / default, ... https://develop.sentry.dev/sdk/data-model/event-payloads/breadcrumbs/#breadcrumb-types
+    sentry_value_set_by_key(crumb, "category", sentry_value_new_string("CppDemo"));
+    sentry_value_set_by_key(crumb, "level", sentry_value_new_string("debug")); // fatal, error, warning, info, debug
+    //if (timestamp) {
+    //    sentry_value_set_by_key(crumb, "timestamp", sentry_value_new_string(timestamp));
+    //}
+    sentry_add_breadcrumb(crumb);
 }
 
 void cppdemo::NativeInitialization() {
@@ -63,6 +72,12 @@ void cppdemo::NativeInitialization() {
     static std::terminate_handler PreviousTerminateHandler = std::set_terminate([] {
         LOG_PRINT("Custom terminate lambda handler (!)");
 
+        sentry_value_t event = sentry_value_new_message_event(
+            SENTRY_LEVEL_DEBUG,
+            nullptr,
+            "C++ unhandled exception (from terminate handler)"
+        );
+
         constexpr size_t MaxFrames = 64;
 
         void *frames[MaxFrames];
@@ -71,6 +86,9 @@ void cppdemo::NativeInitialization() {
             // override throw backtrace frame, on the exception (probably) thrown, for readability reason
             std::swap(frames[0], frames[framesCount-2]);
         }
+
+        sentry_value_t stacktrace = sentry_value_new_stacktrace(frames, framesCount);
+        LOG_PRINT("  .stacktrace:\n%s", sentry_value_to_json(stacktrace));
 
         const char *exception_type = "Unknown";
         const char *exception_message = "No exception information available";
@@ -89,7 +107,32 @@ void cppdemo::NativeInitialization() {
             }
         }
 
-        LOG_PRINT("  .exception(.type: %s, message: %s)", exception_type, exception_message);
+        sentry_value_t exception = sentry_value_new_exception(exception_type, exception_message);
+
+        sentry_value_set_by_key(exception, "stacktrace", stacktrace);
+
+        sentry_value_t mechanism = sentry_value_new_object();
+        sentry_value_set_by_key(mechanism, "type", sentry_value_new_string("cpp_terminate"));
+        sentry_value_set_by_key(mechanism, "handled", sentry_value_new_bool(true));
+
+        sentry_value_t data = sentry_value_new_object();
+        if (framesCount > 2) {
+            sentry_value_set_by_key(data, "dev_info", sentry_value_new_string("first frame was swapped with backtrace, to improve grouping events"));
+        }
+        sentry_value_set_by_key(mechanism, "data", data);
+        sentry_value_set_by_key(exception, "mechanism", mechanism);
+
+        sentry_event_add_exception(event, exception);
+
+        LOG_PRINT("  .exception-body:\n%s", sentry_value_to_json(event));
+
+        sentry_uuid_t uuid = sentry_capture_event(event);
+        char eventID[37];
+        sentry_uuid_as_string(&uuid, eventID);
+
+        LOG_PRINT("  .corresponding-unhandled-exception-event-uuid: %s", eventID);
+
+        sentry_flush(2000); // [ms]
 
         PreviousTerminateHandler();
     });
